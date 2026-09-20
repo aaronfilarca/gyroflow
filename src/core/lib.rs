@@ -923,6 +923,7 @@ impl StabilizationManager {
     pub fn set_stab_enabled          (&self, v: bool) { self.params.write().stab_enabled           = v; }
     pub fn set_frame_readout_time    (&self, v: f64)  { self.params.write().frame_readout_time     = v; }
     pub fn set_frame_readout_direction(&self, v: impl Into<ReadoutDirection>) { self.params.write().frame_readout_direction = v.into(); }
+    pub fn set_rsc_velocity_limit   (&self, v: f64)  { self.params.write().rsc_velocity_limit = v.clamp(0.0, stabilization_params::RSC_VELOCITY_LIMIT_MAX); self.invalidate_zooming(); }
     pub fn set_adaptive_zoom         (&self, v: f64)  { self.params.write().adaptive_zoom_window   = v; self.invalidate_zooming(); }
     pub fn set_zooming_center_x      (&self, v: f64)  { self.params.write().adaptive_zoom_center_offset.0 = v; self.invalidate_zooming(); }
     pub fn set_zooming_center_y      (&self, v: f64)  { self.params.write().adaptive_zoom_center_offset.1 = v; self.invalidate_zooming(); }
@@ -1294,6 +1295,7 @@ impl StabilizationManager {
                 "smoothing_params":       smoothing_params,
                 "frame_readout_time":     params.frame_readout_time.abs(),
                 "frame_readout_direction": params.frame_readout_direction,
+                "rsc_velocity_limit":     params.rsc_velocity_limit,
                 "adaptive_zoom_window":   params.adaptive_zoom_window,
                 "adaptive_zoom_center_offset": params.adaptive_zoom_center_offset,
                 "adaptive_zoom_method":   params.adaptive_zoom_method,
@@ -1649,6 +1651,7 @@ impl StabilizationManager {
                 if let Some(v) = obj.get("frame_readout_time")    .and_then(|x| x.as_f64()) { params.frame_readout_time      = v; if v < 0.0 { params.frame_readout_direction = ReadoutDirection::BottomToTop; } }
                 if let Some(v) = obj.get("frame_readout_direction").and_then(|x| x.as_i64()) { params.frame_readout_direction = (v as i32).into(); }
                 if let Some(v) = obj.get("frame_readout_direction").and_then(|x| x.as_str()) { params.frame_readout_direction = v.into(); }
+                if let Some(v) = obj.get("rsc_velocity_limit").and_then(|x| x.as_f64()) { params.rsc_velocity_limit = v.clamp(0.0, stabilization_params::RSC_VELOCITY_LIMIT_MAX); }
                 if let Some(v) = obj.get("adaptive_zoom_window")  .and_then(|x| x.as_f64()) { params.adaptive_zoom_window    = v; }
                 if let Some(v) = obj.get("lens_correction_amount").and_then(|x| x.as_f64()) { params.lens_correction_amount  = v; }
                 if let Some(v) = obj.get("frame_offset")          .and_then(|x| x.as_i64()) { params.frame_offset            = v as i32; }

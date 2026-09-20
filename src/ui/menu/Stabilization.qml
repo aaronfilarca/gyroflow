@@ -38,6 +38,7 @@ MenuItem {
         property alias maxZoomIterations: maxZoomIterations.value;
         property alias focalLengthSmoothingEnabled: flEnable.cb.checked;
         property alias focalLengthMaxZoomRate: flMaxZoomRate.value;
+        property alias rscVelocityLimit: rscVelocityLimit.value;
 
         Component.onCompleted: settings.init(sett);
         function propChanged() { settings.propChanged(sett); }
@@ -66,6 +67,7 @@ MenuItem {
             if (typeof stab.frame_readout_time === 'number') {
                 setFrameReadoutTime(+stab.frame_readout_time, stab.frame_readout_direction);
             }
+            if (typeof stab.rsc_velocity_limit === 'number') rscVelocityLimit.value = +stab.rsc_velocity_limit;
 
             if (typeof stab.lens_correction_amount !== "undefined") {
                 correctionAmount.value = +stab.lens_correction_amount;
@@ -772,6 +774,21 @@ MenuItem {
                 ReadoutDirection {
                     id: readoutDirection;
                     onDirectionChanged: controller.frame_readout_direction = readoutDirection.getInt();
+                }
+            }
+            Label {
+                text: qsTr("RSC velocity limit");
+                tooltip: qsTr("Soft-clamps extreme angular velocity spikes during rolling shutter scanline correction to prevent sudden zoom punches during impacts.");
+                SliderWithField {
+                    id: rscVelocityLimit;
+                    from: 0;
+                    to: 2000;
+                    value: 1000;
+                    defaultValue: 1000;
+                    unit: qsTr("deg/s");
+                    precision: 0;
+                    width: parent.width;
+                    onValueChanged: controller.rsc_velocity_limit = value;
                 }
             }
         }

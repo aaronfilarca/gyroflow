@@ -7,6 +7,8 @@ use nalgebra::Vector4;
 
 use crate::keyframes::*;
 
+pub const RSC_VELOCITY_LIMIT_MAX: f64 = 2000.0;
+
 #[derive(Default, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub enum BackgroundMode {
     #[default]
@@ -71,6 +73,7 @@ pub struct StabilizationParams {
 
     pub frame_readout_time: f64,
     pub frame_readout_direction: ReadoutDirection,
+    pub rsc_velocity_limit: f64,
     pub adaptive_zoom_window: f64,
     pub adaptive_zoom_center_offset: (f64, f64),
     pub adaptive_zoom_method: i32,
@@ -147,6 +150,7 @@ impl Default for StabilizationParams {
             show_optical_flow: true,
             frame_readout_time: 0.0,
             frame_readout_direction: ReadoutDirection::TopToBottom,
+            rsc_velocity_limit: 1000.0,
             adaptive_zoom_window: 4.0,
             adaptive_zoom_center_offset: (0.0, 0.0),
             adaptive_zoom_method: 1,

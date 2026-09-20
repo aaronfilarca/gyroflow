@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright © 2021-2022 Adrian <adrian.eddy at gmail>
 
-use nalgebra::Matrix3;
+use nalgebra::{Matrix3, UnitQuaternion};
 use super::{ ComputeParams, KernelParams };
 use rayon::iter::{ ParallelIterator, IntoParallelIterator };
 use crate::gyro_source::FileMetadata;
@@ -19,6 +19,22 @@ pub struct FrameTransform {
 }
 
 impl FrameTransform {
+    fn attenuate_rsc_rotation(rotation: UnitQuaternion<f64>, dt_s: f64, velocity_limit: f64) -> UnitQuaternion<f64> {
+        if !(dt_s.abs() > 0.0) || !velocity_limit.is_finite() || velocity_limit <= 0.0 || velocity_limit >= crate::stabilization_params::RSC_VELOCITY_LIMIT_MAX {
+            return rotation;
+        }
+
+        let velocity_limit = velocity_limit.to_radians();
+        let velocity = rotation.angle() / dt_s.abs();
+        if !velocity.is_finite() || velocity <= velocity_limit {
+            return rotation;
+        }
+
+        let max_velocity = velocity_limit * 2.0;
+        let attenuated_velocity = velocity_limit + (max_velocity - velocity_limit) * ((velocity - velocity_limit) / (max_velocity - velocity_limit)).tanh();
+        UnitQuaternion::identity().slerp(&rotation, attenuated_velocity / velocity)
+    }
+
     fn get_frame_readout_time(params: &ComputeParams, can_invert: bool, timestamp_ms: f64, file_metadata: &FileMetadata) -> f64 {
         let mut frame_readout_time = params.frame_readout_time.abs();
         let mut scale = 1.0;
@@ -317,7 +333,8 @@ impl FrameTransform {
 
         let image_rotation = Matrix3::new_rotation(video_rotation * (std::f64::consts::PI / 180.0));
 
-        let quat1 = gyro.org_quat_at_timestamp(timestamp_ms).inverse();
+        let org_quat = gyro.org_quat_at_timestamp(timestamp_ms);
+        let quat1 = org_quat.inverse();
         let smoothed_quat1 = gyro.smoothed_quat_at_timestamp(timestamp_ms);
 
         // Only compute 1 matrix if not using rolling shutter correction
@@ -338,9 +355,8 @@ impl FrameTransform {
             } else {
                 start_ts
             };
-            let quat = smoothed_quat1
-                     * quat1
-                     * gyro.org_quat_at_timestamp(quat_time);
+            let raw_rotation = quat1 * gyro.org_quat_at_timestamp(quat_time);
+            let quat = smoothed_quat1 * Self::attenuate_rsc_rotation(raw_rotation, (quat_time - timestamp_ms) / 1000.0, params.rsc_velocity_limit);
 
 
             let mut r = image_rotation * *quat.to_rotation_matrix().matrix();
@@ -474,7 +490,8 @@ impl FrameTransform {
 
         let image_rotation = Matrix3::new_rotation(video_rotation * (std::f64::consts::PI / 180.0));
 
-        let quat1 = gyro.org_quat_at_timestamp(timestamp_ms).inverse();
+        let org_quat = gyro.org_quat_at_timestamp(timestamp_ms);
+        let quat1 = org_quat.inverse();
         let smoothed_quat1 = gyro.smoothed_quat_at_timestamp(timestamp_ms);
 
         // Only compute 1 matrix if not using rolling shutter correction; it stands for the whole frame, so the
@@ -495,9 +512,8 @@ impl FrameTransform {
             } else {
                 start_ts
             };
-            let quat = smoothed_quat1
-                     * quat1
-                     * gyro.org_quat_at_timestamp(quat_time);
+            let raw_rotation = quat1 * gyro.org_quat_at_timestamp(quat_time);
+            let quat = smoothed_quat1 * Self::attenuate_rsc_rotation(raw_rotation, (quat_time - timestamp_ms) / 1000.0, params.rsc_velocity_limit);
 
             let mut r = image_rotation * *quat.to_rotation_matrix().matrix();
             r[(0, 1)] *= -1.0; r[(0, 2)] *= -1.0;
@@ -560,6 +576,20 @@ mod tests {
     const W: usize = 1920;
     const H: usize = 1080;
     const POINTS: [(f32, f32); 5] = [(0.0, 0.0), (1919.0, 0.0), (960.0, 540.0), (300.0, 900.0), (1600.0, 1079.0)];
+
+    #[test]
+    fn rsc_velocity_limit_softly_attenuates_scanline_rotation() {
+        let rotation = UnitQuaternion::from_axis_angle(&nalgebra::Vector3::z_axis(), 1.0);
+        let unchanged = FrameTransform::attenuate_rsc_rotation(rotation, 1.0, 0.0);
+        assert!((unchanged.angle() - 1.0).abs() < 1e-12);
+
+        let below_limit = FrameTransform::attenuate_rsc_rotation(rotation, 1.0, 2.0_f64.to_degrees());
+        assert!((below_limit.angle() - 1.0).abs() < 1e-12);
+
+        let limited = FrameTransform::attenuate_rsc_rotation(rotation, 0.1, 2.0_f64.to_degrees());
+        let velocity = limited.angle() / 0.1;
+        assert!(velocity > 2.0 && velocity < 4.0);
+    }
 
     /// A plain fisheye calibration on a still camera with one lens breathing table: everything the two transform
     /// paths need to describe the same frame, and nothing that could move between them
