@@ -777,13 +777,14 @@ MenuItem {
                     id: readoutDirection;
                     onDirectionChanged: controller.frame_readout_direction = readoutDirection.getInt();
                 }
-                CheckBox {
-                    id: constrainRscToZoomLimit;
-                    text: qsTr("Constrain RSC to zoom limit");
-                    tooltip: qsTr("Attenuates rolling shutter scanline dewarp during violent jolts so the frame never punches in past the set zoom limit.");
-                    checked: controller.constrain_rsc_to_zoom_limit;
-                    onCheckedChanged: controller.constrain_rsc_to_zoom_limit = checked;
-                }
+            }
+            CheckBox {
+                id: constrainRscToZoomLimit;
+                text: qsTr("Constrain RSC to zoom limit");
+                tooltip: qsTr("Attenuates rolling shutter scanline dewarp during violent jolts so the frame never punches in past the set zoom limit.");
+                checked: controller.constrain_rsc_to_zoom_limit;
+                enabled: shutterCb.cb.checked;
+                onCheckedChanged: controller.constrain_rsc_to_zoom_limit = checked;
             }
         }
 
