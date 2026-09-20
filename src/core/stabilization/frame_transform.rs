@@ -97,7 +97,7 @@ impl FrameTransform {
             (0.0, params.output_height as f64),
             (params.output_width as f64, params.output_height as f64),
         ];
-        let mut displacement = 0.0;
+        let mut displacement: f64 = 0.0;
         for row in 0..rows {
             let quat_time = if frame_readout_time.abs() > 0.0 { start_ts + row_readout_time * row as f64 } else { start_ts };
             let quat = gyro.smoothed_quat_at_timestamp(timestamp_ms)
