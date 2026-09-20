@@ -2213,6 +2213,7 @@ impl Controller {
     fn get_lens_breathing_enabled(&self) -> bool {
         self.stabilizer.params.read().lens_breathing_enabled
     }
+    fn get_constrain_rsc_to_zoom_limit(&self) -> bool { self.stabilizer.get_constrain_rsc_to_zoom_limit() }
     fn set_lens_breathing_enabled(&mut self, v: bool) {
         self.stabilizer.params.write().lens_breathing_enabled = v;
         self.request_recompute();
