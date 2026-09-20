@@ -1206,6 +1206,7 @@ impl RenderQueue {
                             fov:                    params.fov,
                             background:             params.background,
                             adaptive_zoom_window:   params.adaptive_zoom_window,
+                            constrain_rsc_to_zoom_limit: params.constrain_rsc_to_zoom_limit,
                             lens_correction_amount: params.lens_correction_amount,
                             light_refraction_coefficient: params.light_refraction_coefficient,
                             background_mode:           params.background_mode,

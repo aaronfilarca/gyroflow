@@ -28,6 +28,7 @@ MenuItem {
         property alias croppingMode: croppingMode.currentIndex;
         property alias adaptiveZoom: adaptiveZoom.value;
         property alias correctionAmount: correctionAmount.value;
+        property alias constrainRscToZoomLimit: constrainRscToZoomLimit.checked;
         property alias useGravityVectors: useGravityVectors.checked;
         property alias hlIntegrationMethod: integrationMethod.currentIndex;
         property alias videoSpeedAffectsSmoothing: videoSpeedAffectsSmoothing.checked;
@@ -65,6 +66,9 @@ MenuItem {
             }
             if (typeof stab.frame_readout_time === 'number') {
                 setFrameReadoutTime(+stab.frame_readout_time, stab.frame_readout_direction);
+            }
+            if (stab.hasOwnProperty("constrain_rsc_to_zoom_limit")) {
+                constrainRscToZoomLimit.checked = !!stab.constrain_rsc_to_zoom_limit;
             }
 
             if (typeof stab.lens_correction_amount !== "undefined") {
@@ -772,6 +776,13 @@ MenuItem {
                 ReadoutDirection {
                     id: readoutDirection;
                     onDirectionChanged: controller.frame_readout_direction = readoutDirection.getInt();
+                }
+                CheckBox {
+                    id: constrainRscToZoomLimit;
+                    text: qsTr("Constrain RSC to zoom limit");
+                    tooltip: qsTr("Attenuates rolling shutter scanline dewarp during violent jolts so the frame never punches in past the set zoom limit.");
+                    checked: controller.constrain_rsc_to_zoom_limit;
+                    onCheckedChanged: controller.constrain_rsc_to_zoom_limit = checked;
                 }
             }
         }

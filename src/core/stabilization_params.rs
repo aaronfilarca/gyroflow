@@ -71,6 +71,7 @@ pub struct StabilizationParams {
 
     pub frame_readout_time: f64,
     pub frame_readout_direction: ReadoutDirection,
+    pub constrain_rsc_to_zoom_limit: bool,
     pub adaptive_zoom_window: f64,
     pub adaptive_zoom_center_offset: (f64, f64),
     pub adaptive_zoom_method: i32,
@@ -147,6 +148,7 @@ impl Default for StabilizationParams {
             show_optical_flow: true,
             frame_readout_time: 0.0,
             frame_readout_direction: ReadoutDirection::TopToBottom,
+            constrain_rsc_to_zoom_limit: false,
             adaptive_zoom_window: 4.0,
             adaptive_zoom_center_offset: (0.0, 0.0),
             adaptive_zoom_method: 1,
@@ -314,6 +316,7 @@ impl StabilizationParams {
             show_optical_flow:         self.show_optical_flow,
             background:                self.background,
             adaptive_zoom_window:      self.adaptive_zoom_window,
+            constrain_rsc_to_zoom_limit: self.constrain_rsc_to_zoom_limit,
             framebuffer_inverted:      self.framebuffer_inverted,
             lens_correction_amount:    self.lens_correction_amount,
             video_speed:               self.video_speed,

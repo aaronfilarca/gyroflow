@@ -923,6 +923,8 @@ impl StabilizationManager {
     pub fn set_stab_enabled          (&self, v: bool) { self.params.write().stab_enabled           = v; }
     pub fn set_frame_readout_time    (&self, v: f64)  { self.params.write().frame_readout_time     = v; }
     pub fn set_frame_readout_direction(&self, v: impl Into<ReadoutDirection>) { self.params.write().frame_readout_direction = v.into(); }
+    pub fn set_constrain_rsc_to_zoom_limit(&self, v: bool) { self.params.write().constrain_rsc_to_zoom_limit = v; self.invalidate_smoothing(); }
+    pub fn get_constrain_rsc_to_zoom_limit(&self) -> bool { self.params.read().constrain_rsc_to_zoom_limit }
     pub fn set_adaptive_zoom         (&self, v: f64)  { self.params.write().adaptive_zoom_window   = v; self.invalidate_zooming(); }
     pub fn set_zooming_center_x      (&self, v: f64)  { self.params.write().adaptive_zoom_center_offset.0 = v; self.invalidate_zooming(); }
     pub fn set_zooming_center_y      (&self, v: f64)  { self.params.write().adaptive_zoom_center_offset.1 = v; self.invalidate_zooming(); }
@@ -1294,6 +1296,7 @@ impl StabilizationManager {
                 "smoothing_params":       smoothing_params,
                 "frame_readout_time":     params.frame_readout_time.abs(),
                 "frame_readout_direction": params.frame_readout_direction,
+                "constrain_rsc_to_zoom_limit": params.constrain_rsc_to_zoom_limit,
                 "adaptive_zoom_window":   params.adaptive_zoom_window,
                 "adaptive_zoom_center_offset": params.adaptive_zoom_center_offset,
                 "adaptive_zoom_method":   params.adaptive_zoom_method,
@@ -1818,6 +1821,7 @@ impl StabilizationManager {
                 if let Some(v) = obj.get("background_margin").and_then(|x| x.as_f64()) { params.background_margin = v; }
                 if let Some(v) = obj.get("background_margin_feather").and_then(|x| x.as_f64()) { params.background_margin_feather = v; }
                 if let Some(v) = obj.get("light_refraction_coefficient").and_then(|x| x.as_f64()) { params.light_refraction_coefficient = v; }
+                if let Some(v) = obj.get("constrain_rsc_to_zoom_limit").and_then(|x| x.as_bool()) { params.constrain_rsc_to_zoom_limit = v; }
             }
 
             {

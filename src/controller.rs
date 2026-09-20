@@ -131,6 +131,7 @@ pub struct Controller {
     show_safe_area: qt_property!(bool; WRITE set_show_safe_area),
     frame_readout_time: qt_property!(f64; WRITE set_frame_readout_time),
     frame_readout_direction: qt_property!(i32; WRITE set_frame_readout_direction),
+    constrain_rsc_to_zoom_limit: qt_property!(bool; READ get_constrain_rsc_to_zoom_limit WRITE set_constrain_rsc_to_zoom_limit),
 
     adaptive_zoom: qt_property!(f64; WRITE set_adaptive_zoom),
     zooming_center_x: qt_property!(f64; WRITE set_zooming_center_x),
@@ -1494,6 +1495,7 @@ impl Controller {
     wrap_simple_method!(set_fov,                v: f64; recompute; chart_data_changed);
     wrap_simple_method!(set_frame_readout_time, v: f64; recompute);
     wrap_simple_method!(set_frame_readout_direction, v: i32; recompute);
+    wrap_simple_method!(set_constrain_rsc_to_zoom_limit, v: bool; recompute);
     wrap_simple_method!(set_adaptive_zoom,      v: f64; recompute; zooming_data_changed);
     wrap_simple_method!(set_max_zoom,           v: f64, i: usize; recompute; zooming_data_changed);
     wrap_simple_method!(set_zooming_center_x,   v: f64; recompute; zooming_data_changed);

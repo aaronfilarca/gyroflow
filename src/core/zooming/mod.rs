@@ -131,6 +131,7 @@ pub fn get_checksum(compute_params: &ComputeParams, smoothing_checksum: u64) -> 
     hasher.write_u64(compute_params.scaled_fps.to_bits());
     hasher.write_u64(compute_params.frame_readout_time.to_bits());
     hasher.write_i32(compute_params.frame_readout_direction as i32);
+    hasher.write_u8(compute_params.constrain_rsc_to_zoom_limit as u8);
     for x in compute_params.trim_ranges.iter() {
         hasher.write_u64(x.0.to_bits());
         hasher.write_u64(x.1.to_bits());

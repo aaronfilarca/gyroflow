@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright © 2021-2022 Adrian <adrian.eddy at gmail>
 
-use nalgebra::Matrix3;
+use nalgebra::{Matrix3, UnitQuaternion, Vector3};
 use super::{ ComputeParams, KernelParams };
 use rayon::iter::{ ParallelIterator, IntoParallelIterator };
 use crate::gyro_source::FileMetadata;
@@ -55,6 +55,65 @@ impl FrameTransform {
         let mut fov = if use_fovs { params.fovs.get(frame).unwrap_or(if params.fovs.len() > 1 { params.fovs.last().unwrap() } else { &1.0 }) * fov_scale } else { 1.0 }.max(0.001);
         fov *= params.width as f64 / params.output_width.max(1) as f64;
         fov
+    }
+
+    fn rotation_matrix(params: &ComputeParams, image_rotation: &Matrix3<f64>, quat: &UnitQuaternion<f64>) -> Matrix3<f64> {
+        let mut r = image_rotation * *quat.to_rotation_matrix().matrix();
+        if params.framebuffer_inverted {
+            r[(0, 2)] *= -1.0; r[(1, 2)] *= -1.0;
+            r[(2, 0)] *= -1.0; r[(2, 1)] *= -1.0;
+        } else {
+            r[(0, 1)] *= -1.0; r[(0, 2)] *= -1.0;
+            r[(1, 0)] *= -1.0; r[(2, 0)] *= -1.0;
+        }
+        r
+    }
+
+    /// Return the largest fraction of the scanline rotation that fits in the remaining zoom-limit margin.
+    /// The centre-row orientation is deliberately excluded: only the relative rolling-shutter deformation is scaled.
+    fn rsc_scale(params: &ComputeParams, new_k: &Matrix3<f64>, fov: f64, timestamp_ms: f64,
+                 frame_readout_time: f64, start_ts: f64, row_readout_time: f64, rows: usize,
+                 gyro: &crate::gyro_source::GyroSource, image_rotation: &Matrix3<f64>) -> f64 {
+        if !params.constrain_rsc_to_zoom_limit || rows <= 1 { return 1.0; }
+        let mut zoom_limit = params.keyframes.value_at_video_timestamp(&KeyframeType::MaxZoom, timestamp_ms)
+            .unwrap_or(params.max_zoom.unwrap_or(0.0)) / 100.0;
+        if !(zoom_limit > 0.5) { return 1.0; }
+        if params.video_speed_affects_zooming_limit {
+            zoom_limit *= (1.0 + ((params.video_speed.abs() - 1.0) / 4.0)).min(1.8);
+        }
+        let fov_limit = 1.0 / (zoom_limit * params.width as f64 / params.output_width.max(1) as f64);
+        let allowed_margin = (fov - fov_limit).max(0.0);
+        if allowed_margin == 0.0 { return 0.0; }
+
+        let centre_time = start_ts + row_readout_time * (rows.saturating_sub(1) as f64 / 2.0);
+        let centre_quat = gyro.smoothed_quat_at_timestamp(timestamp_ms)
+            * gyro.org_quat_at_timestamp(timestamp_ms).inverse()
+            * gyro.org_quat_at_timestamp(centre_time);
+        let centre_r = Self::rotation_matrix(params, image_rotation, &centre_quat);
+        let Some(centre_inverse) = (new_k * centre_r).try_inverse() else { return 1.0; };
+        let corners = [
+            (0.0, 0.0),
+            (params.output_width as f64, 0.0),
+            (0.0, params.output_height as f64),
+            (params.output_width as f64, params.output_height as f64),
+        ];
+        let mut displacement = 0.0;
+        for row in 0..rows {
+            let quat_time = if frame_readout_time.abs() > 0.0 { start_ts + row_readout_time * row as f64 } else { start_ts };
+            let quat = gyro.smoothed_quat_at_timestamp(timestamp_ms)
+                * gyro.org_quat_at_timestamp(timestamp_ms).inverse()
+                * gyro.org_quat_at_timestamp(quat_time);
+            let Some(row_inverse) = (new_k * Self::rotation_matrix(params, image_rotation, &quat)).try_inverse() else { continue; };
+            for &(x, y) in &corners {
+                let centre = centre_inverse * Vector3::new(x, y, 1.0);
+                let row = row_inverse * Vector3::new(x, y, 1.0);
+                if centre[2].abs() < 1e-9 || row[2].abs() < 1e-9 { continue; }
+                let dx = (row[0] / row[2] - centre[0] / centre[2]).abs() / params.width.max(1) as f64;
+                let dy = (row[1] / row[2] - centre[1] / centre[2]).abs() / params.height.max(1) as f64;
+                displacement = displacement.max(2.0 * dx.max(dy));
+            }
+        }
+        if displacement > 0.0 { (allowed_margin / displacement).clamp(0.0, 1.0) } else { 1.0 }
     }
 
     /// The metadata focal length is often quantized (whole millimetres on many Sony lenses) while the optics
@@ -319,9 +378,10 @@ impl FrameTransform {
 
         let quat1 = gyro.org_quat_at_timestamp(timestamp_ms).inverse();
         let smoothed_quat1 = gyro.smoothed_quat_at_timestamp(timestamp_ms);
-
-        // Only compute 1 matrix if not using rolling shutter correction
         let rows = if frame_readout_time.abs() > 0.0 { if params.frame_readout_direction.is_horizontal() { params.width } else { params.height } } else { 1 };
+        let rsc_scale = Self::rsc_scale(params, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
+        let centre_time = start_ts + row_readout_time * (rows.saturating_sub(1) as f64 / 2.0);
+        let centre_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(centre_time);
 
         let breathing = if params.lens_breathing_enabled { file_metadata.lens_breathing.get(frame).filter(|b| !b.scale.is_empty()) } else { None };
 
@@ -338,19 +398,12 @@ impl FrameTransform {
             } else {
                 start_ts
             };
-            let quat = smoothed_quat1
-                     * quat1
-                     * gyro.org_quat_at_timestamp(quat_time);
-
-
-            let mut r = image_rotation * *quat.to_rotation_matrix().matrix();
-            if params.framebuffer_inverted {
-                r[(0, 2)] *= -1.0; r[(1, 2)] *= -1.0;
-                r[(2, 0)] *= -1.0; r[(2, 1)] *= -1.0;
-            } else {
-                r[(0, 1)] *= -1.0; r[(0, 2)] *= -1.0;
-                r[(1, 0)] *= -1.0; r[(2, 0)] *= -1.0;
-            }
+            let raw_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(quat_time);
+            let quat = if rsc_scale < 1.0 {
+                let delta = centre_quat.inverse() * raw_quat;
+                centre_quat * UnitQuaternion::from_scaled_axis(delta.scaled_axis() * rsc_scale)
+            } else { raw_quat };
+            let mut r = Self::rotation_matrix(params, &image_rotation, &quat);
 
             let (mut sx, mut sy, mut ra, mut ox, mut oy) = if let Some(is) = file_metadata.camera_stab_data.get(frame) {
                 let y_sensor = sensor_row(y, is.crop_area.1 as f64, is.crop_area.3 as f64);
@@ -481,6 +534,10 @@ impl FrameTransform {
         // per-row data (sensor and lens shift, lens breathing) is looked up at the centre row, like `at_timestamp` does
         let centre = [(params.width as f32 / 2.0, params.height as f32 / 2.0)];
         let points_iter: &[(f32, f32)] = if frame_readout_time.abs() > 0.0 { points } else { &centre };
+        let rows = if frame_readout_time.abs() > 0.0 { if params.frame_readout_direction.is_horizontal() { params.width } else { params.height } } else { 1 };
+        let rsc_scale = Self::rsc_scale(params, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
+        let centre_time = start_ts + row_readout_time * (rows.saturating_sub(1) as f64 / 2.0);
+        let centre_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(centre_time);
 
         // Lens breathing, the zoom `at_timestamp` folds into its matrices, so this direction can undo it and the two
         // stay invertible (the STMap export writes a map from each). Like the focal length compensation above it's
@@ -495,10 +552,11 @@ impl FrameTransform {
             } else {
                 start_ts
             };
-            let quat = smoothed_quat1
-                     * quat1
-                     * gyro.org_quat_at_timestamp(quat_time);
-
+            let raw_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(quat_time);
+            let quat = if rsc_scale < 1.0 {
+                let delta = centre_quat.inverse() * raw_quat;
+                centre_quat * UnitQuaternion::from_scaled_axis(delta.scaled_axis() * rsc_scale)
+            } else { raw_quat };
             let mut r = image_rotation * *quat.to_rotation_matrix().matrix();
             r[(0, 1)] *= -1.0; r[(0, 2)] *= -1.0;
             r[(1, 0)] *= -1.0; r[(2, 0)] *= -1.0;
