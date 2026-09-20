@@ -71,7 +71,7 @@ impl FrameTransform {
 
     /// Return the largest fraction of the scanline rotation that fits in the remaining zoom-limit margin.
     /// The centre-row orientation is deliberately excluded: only the relative rolling-shutter deformation is scaled.
-    fn rsc_scale(params: &ComputeParams, new_k: &Matrix3<f64>, fov: f64, timestamp_ms: f64,
+    fn rsc_scale(params: &ComputeParams, frame: usize, new_k: &Matrix3<f64>, fov: f64, timestamp_ms: f64,
                  frame_readout_time: f64, start_ts: f64, row_readout_time: f64, rows: usize,
                  gyro: &crate::gyro_source::GyroSource, image_rotation: &Matrix3<f64>) -> f64 {
         if !params.constrain_rsc_to_zoom_limit || rows <= 1 { return 1.0; }
@@ -113,7 +113,9 @@ impl FrameTransform {
                 displacement = displacement.max(2.0 * dx.max(dy));
             }
         }
-        if displacement > 0.0 { (allowed_margin / displacement).clamp(0.0, 1.0) } else { 1.0 }
+        let geometric_scale = if displacement > 0.0 { (allowed_margin / displacement).clamp(0.0, 1.0) } else { 1.0 };
+        let zoom_scale = params.smoothing_fov_limit_per_frame.get(frame).copied().unwrap_or(1.0).clamp(0.0, 1.0);
+        geometric_scale.min(zoom_scale)
     }
 
     /// The metadata focal length is often quantized (whole millimetres on many Sony lenses) while the optics
@@ -379,7 +381,7 @@ impl FrameTransform {
         let quat1 = gyro.org_quat_at_timestamp(timestamp_ms).inverse();
         let smoothed_quat1 = gyro.smoothed_quat_at_timestamp(timestamp_ms);
         let rows = if frame_readout_time.abs() > 0.0 { if params.frame_readout_direction.is_horizontal() { params.width } else { params.height } } else { 1 };
-        let rsc_scale = Self::rsc_scale(params, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
+        let rsc_scale = Self::rsc_scale(params, frame, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
         let centre_time = start_ts + row_readout_time * (rows.saturating_sub(1) as f64 / 2.0);
         let centre_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(centre_time);
 
@@ -535,7 +537,7 @@ impl FrameTransform {
         let centre = [(params.width as f32 / 2.0, params.height as f32 / 2.0)];
         let points_iter: &[(f32, f32)] = if frame_readout_time.abs() > 0.0 { points } else { &centre };
         let rows = if frame_readout_time.abs() > 0.0 { if params.frame_readout_direction.is_horizontal() { params.width } else { params.height } } else { 1 };
-        let rsc_scale = Self::rsc_scale(params, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
+        let rsc_scale = Self::rsc_scale(params, frame, &new_k, fov, timestamp_ms, frame_readout_time, start_ts, row_readout_time, rows, &gyro, &image_rotation);
         let centre_time = start_ts + row_readout_time * (rows.saturating_sub(1) as f64 / 2.0);
         let centre_quat = smoothed_quat1 * quat1 * gyro.org_quat_at_timestamp(centre_time);
 
